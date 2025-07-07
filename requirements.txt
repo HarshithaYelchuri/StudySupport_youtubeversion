@@ -1,0 +1,9 @@
+
+
+streamlit-webrtc
+
+whisper
+numpy
+scipy
+Pillow
+

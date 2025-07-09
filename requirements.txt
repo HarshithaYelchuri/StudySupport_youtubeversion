@@ -1,9 +1,13 @@
-
-
-streamlit-webrtc
-
-whisper
-numpy
-scipy
-Pillow
+streamlit
+google-auth
+google-api-python-client
+google-generativeai
+python-dotenv
+pandas
+PyPDF2
+reportlab
+langchain
+langchain-google-genai
+langchain-community
+faiss-cpu
 

@@ -1,41 +1,30 @@
 import streamlit as st
-import json
-from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
-
-# ✅ Gemini integration instead of OpenAI
+from google.oauth2 import service_account
 from gemini_integration import generate_quiz_questions
 
-SCOPES = ['https://www.googleapis.com/auth/forms.body', 'https://www.googleapis.com/auth/forms.responses.readonly']
-SERVICE_ACCOUNT_FILE = "credentials.json"
+SCOPES = ["https://www.googleapis.com/auth/forms.body", "https://www.googleapis.com/auth/forms.responses.readonly"]
 
 def authenticate_google():
-    creds = service_account.Credentials.from_service_account_file(
-        SERVICE_ACCOUNT_FILE, scopes=SCOPES)
-    service = build('forms', 'v1', credentials=creds)
-    return service
+    creds = service_account.Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"],
+        scopes=SCOPES
+    )
+    return build("forms", "v1", credentials=creds)
 
-def create_form(service, title, description):
-    NEW_FORM = {
+def create_form(service, title, questions):
+    form = {
         "info": {
-            "title": title,
-            "description": description
+            "title": title
         }
     }
 
-    try:
-        form = service.forms().create(body=NEW_FORM).execute()
-        return form["formId"]
-    except HttpError as error:
-        st.error(f"An error occurred while creating the form: {error}")
-        return None
+    result = service.forms().create(body=form).execute()
+    form_id = result["formId"]
 
-def add_questions_to_form(service, form_id, questions):
-    requests_batch = []
-
+    requests = []
     for q in questions:
-        req = {
+        question_item = {
             "createItem": {
                 "item": {
                     "title": q["question"],
@@ -44,8 +33,8 @@ def add_questions_to_form(service, form_id, questions):
                             "required": True,
                             "choiceQuestion": {
                                 "type": "RADIO",
-                                "options": [{"value": opt} for opt in q["options"]],
-                                "shuffle": True
+                                "options": [{"value": option} for option in q["options"]],
+                                "shuffle": False,
                             }
                         }
                     }
@@ -53,43 +42,25 @@ def add_questions_to_form(service, form_id, questions):
                 "location": {"index": 0}
             }
         }
-        requests_batch.append(req)
+        requests.append(question_item)
 
-    batch_update_request = {"requests": requests_batch}
-
-    try:
-        service.forms().batchUpdate(formId=form_id, body=batch_update_request).execute()
-    except HttpError as error:
-        st.error(f"An error occurred while adding questions: {error}")
-
-def get_form_url(form_id):
+    service.forms().batchUpdate(formId=form_id, body={"requests": requests}).execute()
     return f"https://docs.google.com/forms/d/{form_id}/edit"
 
 def show_google_form_page(text):
-    st.markdown("## 📄 Generate Google Form Quiz")
+    st.subheader("📄 Generate Google Form Quiz")
+    title = st.text_input("Form Title", "AI Quiz")
 
-    col1, col2 = st.columns(2)
-    with col1:
-        difficulty = st.selectbox("Select Difficulty", ["Basic", "Advanced", "Hard"])
-    with col2:
-        num_questions = st.number_input("Number of Questions", min_value=1, max_value=20, value=5)
+    num_questions = st.slider("Number of Questions", 1, 10, 5)
+    difficulty = st.selectbox("Difficulty", ["basic", "advanced", "hard"])
 
-    if st.button("🚀 Generate Google Form"):
+    if st.button("Generate Google Form"):
         with st.spinner("Generating quiz and creating form..."):
             try:
-                service = authenticate_google()
                 questions = generate_quiz_questions(text, num_questions, difficulty)
-
-                form_title = f"{difficulty} Quiz"
-                form_description = f"A quiz on the given topic at {difficulty} level."
-
-                form_id = create_form(service, form_title, form_description)
-                if form_id:
-                    add_questions_to_form(service, form_id, questions)
-                    form_url = get_form_url(form_id)
-
-                    st.success("✅ Google Form created successfully!")
-                    st.markdown(f"[📝 Click here to view your Google Form]({form_url})", unsafe_allow_html=True)
-
+                service = authenticate_google()
+                form_url = create_form(service, title, questions)
+                st.success("✅ Form created successfully!")
+                st.markdown(f"[Open Google Form]({form_url})")
             except Exception as e:
-                st.error(f"Something went wrong: {e}")
+                st.error(f"Failed to create form: {e}")

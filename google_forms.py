@@ -27,7 +27,7 @@ SCOPES = [
 # ============================= GOOGLE AUTH =============================
 def authenticate_google():
     creds = service_account.Credentials.from_service_account_info(
-        st.secrets["service_account"], scopes=SCOPES
+        st.secrets["google_service_account"], scopes=SCOPES
     )
     service = build('forms', 'v1', credentials=creds)
     return service
@@ -179,7 +179,7 @@ def show_google_form_page(raw_text):
         editor_email = st.text_input("Email to grant edit access")
         if st.button("Grant Edit Access"):
             creds = service_account.Credentials.from_service_account_info(
-                st.secrets["service_account"],
+                st.secrets["google_service_account"],
                 scopes=["https://www.googleapis.com/auth/drive"]
             )
             drive_service = build("drive", "v3", credentials=creds)

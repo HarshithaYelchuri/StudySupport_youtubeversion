@@ -18,7 +18,6 @@ genai.configure(api_key=GEMINI_API_KEY)
 MODEL_NAME = "gemini-1.5-flash"
 model = genai.GenerativeModel(MODEL_NAME)
 
-SERVICE_ACCOUNT_FILE = "service_account.json"
 SCOPES = [
     'https://www.googleapis.com/auth/forms.body',
     'https://www.googleapis.com/auth/forms.responses.readonly',
@@ -27,7 +26,9 @@ SCOPES = [
 
 # ============================= GOOGLE AUTH =============================
 def authenticate_google():
-    creds = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+    creds = service_account.Credentials.from_service_account_info(
+        st.secrets["service_account"], scopes=SCOPES
+    )
     service = build('forms', 'v1', credentials=creds)
     return service
 
@@ -96,6 +97,8 @@ def create_form(service, form_title, questions, q_type):
 
     service.forms().batchUpdate(formId=form_id, body={"requests": question_requests}).execute()
     return form_id, f"https://docs.google.com/forms/d/{form_id}/viewform"
+
+# ============================= DOWNLOAD RESPONSES =============================
 def download_responses(service, form_id, questions, q_type):
     responses = service.forms().responses().list(formId=form_id).execute()
     rows = []
@@ -106,13 +109,11 @@ def download_responses(service, form_id, questions, q_type):
         score = 0
         answers = response.get("answers", {})
 
-        # Temporary dict to map question titles to responses
         answer_map = {}
         for qid, data in answers.items():
             val = data.get("textAnswers", {}).get("answers", [{}])[0].get("value", "").strip()
             answer_map[qid] = val
 
-        # Get form structure to map questionId → title
         form_structure = service.forms().get(formId=form_id).execute()
         question_titles = {}
         for item in form_structure.get("items", []):
@@ -131,7 +132,6 @@ def download_responses(service, form_id, questions, q_type):
                 email = answer
             else:
                 row[f"Q{q_counter+1}"] = answer
-                # Match to correct answer
                 if q_counter < len(correct_answers):
                     if answer.strip().lower() == correct_answers[q_counter]:
                         score += 1
@@ -143,11 +143,8 @@ def download_responses(service, form_id, questions, q_type):
         rows.append(row)
 
     df = pd.DataFrame(rows)
-
-    # Reorder columns for clean CSV output
     question_cols = [col for col in df.columns if col.startswith("Q")]
     return df[["Name", "Email"] + question_cols + ["Score"]]
-
 
 # ============================= MAIN PAGE =============================
 def show_google_form_page(raw_text):
@@ -179,11 +176,10 @@ def show_google_form_page(raw_text):
     if st.session_state.form_created:
         st.success(f"✅ Form Created: [Open Form]({st.session_state.form_url})")
 
-        # Grant edit access
         editor_email = st.text_input("Email to grant edit access")
         if st.button("Grant Edit Access"):
-            creds = service_account.Credentials.from_service_account_file(
-                SERVICE_ACCOUNT_FILE,
+            creds = service_account.Credentials.from_service_account_info(
+                st.secrets["service_account"],
                 scopes=["https://www.googleapis.com/auth/drive"]
             )
             drive_service = build("drive", "v3", credentials=creds)
@@ -201,7 +197,6 @@ def show_google_form_page(raw_text):
         else:
             st.info(f"⏳ Remaining Time: {int(remaining)} min")
 
-        # Download responses
         if st.button("Download Responses"):
             service = authenticate_google()
             df = download_responses(service, st.session_state.form_id, st.session_state.questions_data, q_type)
